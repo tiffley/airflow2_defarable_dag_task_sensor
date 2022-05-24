@@ -3,6 +3,8 @@ from airflow.triggers.base import BaseTrigger, TriggerEvent
 from common.airflow_management_util import *
 from airflow.models.taskinstance import TaskInstance
 from airflow.models import DagBag, DagRun
+from airflow.utils.db import provide_session
+from airflow.models.serialized_dag import SerializedDagModel
 
 
 """
@@ -16,19 +18,23 @@ from airflow.models import DagBag, DagRun
 
 
 class DagStatusTrigger(BaseTrigger):
-    def __init__(self, dag_name, mode="success", triggerID=None):
+    def __init__(self, dag_name, mode="success", execution_date=None, triggerID=None):
         super().__init__()
         self.dag_name = dag_name
         self.mode = mode
+        self.execution_date = execution_date
         self.triggerID = triggerID
 
     def serialize(self):
-        return ("common.deferables.trigger.task_status_trigger.DagStatusTrigger", {"dag_name": self.dag_name, "mode": self.mode, "triggerID": self.triggerID})
+        return ("common.deferables.trigger.task_status_trigger.DagStatusTrigger", {"dag_name": self.dag_name, "mode": self.mode, "execution_date":self.execution_date, "triggerID": self.triggerID})
 
-    def is_all_task_success(self) -> bool:
-        bag = DagBag()
-        tg_dag = bag.get_dag(self.dag_name)
-        latest_dag_run_info = DagRun.find(dag_id=self.dag_name, execution_date=tg_dag.get_latest_execution_date())[0]
+
+    @provide_session
+    def is_all_task_success(self, session=None) -> bool:
+        # bag = DagBag()
+        # tg_dag = bag.get_dag(self.dag_name)
+        tg_dag = SerializedDagModel.get(self.dag_name, session).dag
+        latest_dag_run_info = DagRun.find(dag_id=self.dag_name, execution_date=self.execution_date)[0]
         return True if latest_dag_run_info.state == "success" else False
 
     async def run(self):
@@ -38,22 +44,24 @@ class DagStatusTrigger(BaseTrigger):
 
 
 class TaskStatusTrigger(BaseTrigger):
-    def __init__(self, dag_name, task_name, triggerID=None):
+    def __init__(self, dag_name, task_name, execution_date=None, triggerID=None):
         super().__init__()
         self.dag_name = dag_name
         self.task_name = task_name
+        self.execution_date = execution_date
         self.triggerID = triggerID
-        self.no_exist_flag = True
 
     def serialize(self):
-        return ("common.deferables.trigger.task_status_trigger.TaskStatusTrigger", {"dag_name": self.dag_name, "task_name": self.task_name, "triggerID": self.triggerID})
+        return ("common.deferables.trigger.task_status_trigger.TaskStatusTrigger", {"dag_name": self.dag_name, "task_name": self.task_name, "execution_date":self.execution_date, "triggerID": self.triggerID})
 
 
-    def is_task_succeeded(self):
-        bag = DagBag()
-        tg_dag = bag.get_dag(self.dag_name)
+    @provide_session
+    def is_task_succeeded(self, session=None):
+        # bag = DagBag()
+        # tg_dag = bag.get_dag(self.dag_name)
+        tg_dag = SerializedDagModel.get(self.dag_name, session).dag
         task = tg_dag.get_task(self.task_name)
-        ti = TaskInstance(task=task, execution_date=tg_dag.get_latest_execution_date())
+        ti = TaskInstance(task=task, execution_date=self.execution_date)
         stat = ti.current_state()
         return True if stat == "success" else False
 

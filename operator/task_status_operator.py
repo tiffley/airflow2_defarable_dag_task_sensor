@@ -1,5 +1,7 @@
 from airflow.sensors.base import BaseSensorOperator
 from common.deferables.trigger.task_status_trigger import DagStatusTrigger, TaskStatusTrigger
+from airflow.models.serialized_dag import SerializedDagModel
+from airflow.utils.db import provide_session
 
 
 class DagSensorOperator(BaseSensorOperator):
@@ -17,8 +19,10 @@ class DagSensorOperator(BaseSensorOperator):
         super(DagSensorOperator, self).__init__(*args, **kwargs)
         self.dag_name = dag_name
 
-    def execute(self, context):
-        self.defer(trigger=DagStatusTrigger(self.dag_name, context['task_instance_key_str']), method_name="resume_method")
+    @provide_session
+    def execute(self, context, session=None):
+        tg_dag = SerializedDagModel.get(self.dag_name, session).dag
+        self.defer(trigger=DagStatusTrigger(self.dag_name, execution_date=tg_dag.get_latest_execution_date(), triggerID=context['task_instance_key_str']), method_name="resume_method")
  
     def resume_method(self, context, event=None):
         return
@@ -42,8 +46,10 @@ class TaskSensorOperator(BaseSensorOperator):
         self.dag_name = dag_name
         self.task_name = task_name
 
-    def execute(self, context):
-        self.defer(trigger=TaskStatusTrigger(self.dag_name, self.task_name, context['task_instance_key_str']), method_name="resume_method")
+    @provide_session
+    def execute(self, context, session=None):
+        tg_dag = SerializedDagModel.get(self.dag_name, session).dag
+        self.defer(trigger=TaskStatusTrigger(self.dag_name, self.task_name, execution_date=tg_dag.get_latest_execution_date(), triggerID=context['task_instance_key_str']), method_name="resume_method")
  
     def resume_method(self, context, event=None):
         return
